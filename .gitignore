@@ -10,3 +10,8 @@ vector_store/
 *.sqlite3
 
 .ipynb_checkpoints
+data/vector_store/
+
+data/vector_store/chroma.sqlite3
+
+faiss_store/
