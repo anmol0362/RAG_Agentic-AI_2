@@ -16,6 +16,8 @@ import pyodbc
 import os
 
 
+
+
 def load_all_documents(data_dir: str) -> List[Any]:
 
   data_path = Path(data_dir).resolve()
