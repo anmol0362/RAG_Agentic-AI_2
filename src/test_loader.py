@@ -1,15 +1,15 @@
 from src.data_loader import load_all_documents
 
-from pathlib import Path
+if __name__ == "__main__":
+    records = load_all_documents(
+        data_dir="data",
+        save_path="data/extracted/test_output.jsonl"
+    )
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-docs = load_all_documents(str(BASE_DIR / "data"))
+    print("\n===== SAMPLE OUTPUT =====")
 
-print("Total documents loaded:", len(docs))
+    for i, r in enumerate(records[:5], start=1):
+        print(f"\n--- Record {i} ---")
+        print(r)
 
-if len(docs) > 0:
-    print("\n--- FIRST DOCUMENT ---\n")
-    print(docs[0].page_content[:500])
-
-    print("\n--- LAST DOCUMENT ---\n")
-    print(docs[-1].page_content[:500])
+    print(f"\nTotal records: {len(records)}")
