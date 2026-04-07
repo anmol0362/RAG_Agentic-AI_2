@@ -11,3 +11,21 @@ data/cleaned/
 data/raw_records/
 # Nested repo
 RAG_Agentic-AI_2/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual env
+.venv/
+venv/
+
+# Vector / embedding stores
+faiss_store/
+data/vector_store/
+
+# Generated extracted files
+data/extracted/
+
+# Environment secrets
+.env
