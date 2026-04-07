@@ -4,5 +4,10 @@
 venv/
 .venv/
 
+# Generated embedding / retrieval outputs
+data/embedded/
+data/chunks/
+data/cleaned/
+data/raw_records/
 # Nested repo
 RAG_Agentic-AI_2/
