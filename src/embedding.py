@@ -11,7 +11,7 @@ class EmbeddingPipeline:
     self,
     azure_endpoint: str,
     api_key: str,
-    deployment_name: str = "text-embedding-3-small",
+    deployment_name: str = "text-embedding-3-large",
     chunk_size: int = 800,        # 🔥 bigger chunks
     chunk_overlap: int = 100,
     batch_size: int = 7           # 🔥 safe batch

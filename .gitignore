@@ -1,17 +1,8 @@
 .env
+
+# Virtual environments
+venv/
 .venv/
-__pycache__/
-*.pyc
 
-faiss_store/
-vector_store/
-*.pkl
-*.index
-*.sqlite3
-
-.ipynb_checkpoints
-data/vector_store/
-
-data/vector_store/chroma.sqlite3
-
-faiss_store/
+# Nested repo
+RAG_Agentic-AI_2/

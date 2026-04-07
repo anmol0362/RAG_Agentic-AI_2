@@ -15,7 +15,7 @@ class FaissVectorStore:
         persist_dir: str = "faiss_store",
         azure_endpoint: str = None,
         api_key: str = None,
-        deployment_name: str = "text-embedding-3-small",
+        deployment_name: str = "text-embedding-3-large",
         chunk_size: int = 800,     # 🔥 updated
         chunk_overlap: int = 100
     ):
@@ -120,7 +120,7 @@ class FaissVectorStore:
 
 # 🚀 RUN
 if __name__ == "__main__":
-    from src.data_loader import load_all_documents
+    from src.Data_Ingestion.data_loader import load_all_documents
     from pathlib import Path
 
     BASE_DIR = Path(__file__).resolve().parent.parent
@@ -130,7 +130,7 @@ if __name__ == "__main__":
 
     store = FaissVectorStore(
         persist_dir="faiss_store",
-        deployment_name="text-embedding-3-small"
+        deployment_name="text-embedding-3-large"
     )
 
     # 🔥 IMPORTANT FIX (NO REBUILD LOOP)

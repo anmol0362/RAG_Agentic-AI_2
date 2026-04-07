@@ -1,5 +1,5 @@
 from src.vectorstore import FaissVectorStore
-from src.data_loader import load_all_documents
+from src.Data_Ingestion.data_loader import load_all_documents
 from pathlib import Path
 import os
 
@@ -10,7 +10,7 @@ meta_path = os.path.join("faiss_store", "metadata.pkl")
 
 store = FaissVectorStore(
     persist_dir="faiss_store",
-    deployment_name="text-embedding-3-small"
+    deployment_name="text-embedding-3-large"
 )
 
 if os.path.exists(faiss_path) and os.path.exists(meta_path):

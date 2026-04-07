@@ -2,7 +2,7 @@ from src.vectorstore import FaissVectorStore
 
 store = FaissVectorStore(
     persist_dir="faiss_store",
-    deployment_name="text-embedding-3-small"
+    deployment_name="text-embedding-3-large"
 )
 
 store.load()

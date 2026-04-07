@@ -10,7 +10,7 @@ class RAGSearch:
     def __init__(
         self,
         persist_dir: str = "faiss_store",
-        embedding_deployment: str = "text-embedding-3-small",
+        embedding_deployment: str = "text-embedding-3-large",
         chat_deployment: str = "gpt-4o-mini"   # 🔥 better default
     ):
         # 🔐 Load env
@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
     rag_search = RAGSearch(
         persist_dir="faiss_store",
-        embedding_deployment="text-embedding-3-small",
+        embedding_deployment="text-embedding-3-large",
         chat_deployment="gpt-4o-mini"   # 🔥 recommended
     )
 
