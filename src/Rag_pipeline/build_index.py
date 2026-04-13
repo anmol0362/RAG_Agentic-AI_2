@@ -32,7 +32,7 @@ AZURE_SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT")
 AZURE_SEARCH_ADMIN_KEY = os.getenv("AZURE_SEARCH_ADMIN_KEY")
 
 DOC_INDEX_NAME = "docs-index"
-EMBEDDING_DIMENSION = 3072  # text-embedding-3-large
+EMBEDDING_DIMENSION = 1536  # text-embedding-3-large
 
 
 def get_index_client() -> SearchIndexClient:
@@ -68,7 +68,8 @@ def build_docs_index() -> SearchIndex:
         # NEW: section → e.g. "3.2 Probable Cause"
         # Filter example: section eq '3.2 Probable Cause'
         SimpleField(name="section", type=SearchFieldDataType.String, filterable=True, facetable=True),
-
+        SimpleField(name="chunk_level", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="parent_id",   type=SearchFieldDataType.String, filterable=True),
         SimpleField(name="page", type=SearchFieldDataType.Int32, filterable=True, sortable=True),
         SimpleField(name="chunk_size", type=SearchFieldDataType.Int32, filterable=True),
         SearchField(

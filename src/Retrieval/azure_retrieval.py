@@ -10,23 +10,6 @@ from src.Rag_pipeline.observability import trace
 from src.Rag_pipeline.reranker import rerank_results
 from src.Rag_pipeline.query_optimizer import build_retrieval_queries
 
-
-# =========================================================
-# WHY THIS FILE EXISTS:
-# At query time, this file:
-#   1. Takes the user's question
-#   2. Optimizes it into multiple search queries
-#   3. Embeds each query into a vector
-#   4. Searches Azure AI Search using hybrid search
-#      (vector similarity + keyword search combined)
-#   5. Deduplicates results
-#   6. Reranks using GPT-4o
-#   7. Returns top chunks for the LLM context
-#
-# NEW: select_fields now includes content_type and section
-# so retrieval results carry this info into the context.
-# =========================================================
-
 # -------------------------
 # CONFIG
 # -------------------------
@@ -34,16 +17,15 @@ AZURE_OPENAI_API_KEY     = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT    = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
 
-DOC_EMBEDDING_DEPLOYMENT = os.getenv("DOC_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
+DOC_EMBEDDING_DEPLOYMENT = os.getenv("DOC_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
 
 AZURE_SEARCH_ENDPOINT  = os.getenv("AZURE_SEARCH_ENDPOINT")
 AZURE_SEARCH_ADMIN_KEY = os.getenv("AZURE_SEARCH_ADMIN_KEY")
 
-DOC_INDEX_NAME    = "docs-index"
-DOC_VECTOR_FIELD  = "contentVector"
+DOC_INDEX_NAME      = "docs-index"
+DOC_VECTOR_FIELD    = "contentVector"
 DOC_TOP_K_PER_QUERY = 5
-FINAL_TOP_K = 5
-
+FINAL_TOP_K         = 5
 
 # -------------------------
 # CLIENTS
@@ -65,8 +47,6 @@ def get_search_client(index_name: str) -> SearchClient:
 
 # =========================================================
 # QUERY EMBEDDING
-# Converts the user's question into a 3072-dim vector
-# so it can be compared against stored chunk vectors.
 # =========================================================
 
 def embed_query(query: str, deployment_name: str) -> List[float]:
@@ -94,12 +74,35 @@ def embed_query(query: str, deployment_name: str) -> List[float]:
 
 
 # =========================================================
+# PARENT FETCHER
+# After retrieving child chunks, fetch their parent
+# for full context to send to LLM
+# =========================================================
+
+def fetch_parent_text(parent_id: str, search_client: SearchClient) -> str:
+    """
+    Fetch parent chunk text from Azure Search by parent_id.
+    Child chunks are used for retrieval (small, precise).
+    Parent chunks are used for LLM context (large, complete).
+    """
+    if not parent_id:
+        return ""
+    try:
+        results = search_client.search(
+            search_text="",
+            filter=f"id eq '{parent_id}'",
+            select=["content", "id", "section", "page"],
+            top=1
+        )
+        for r in results:
+            return r.get("content", "")
+    except Exception as e:
+        print(f"[WARN] Could not fetch parent {parent_id}: {e}")
+    return ""
+
+
+# =========================================================
 # SEARCH HELPER
-# Performs hybrid search = vector search + keyword search
-# combined by Azure Search automatically.
-# Vector search finds semantically similar chunks.
-# Keyword search finds exact term matches.
-# Combined = better recall than either alone.
 # =========================================================
 
 def _search_index(
@@ -140,9 +143,11 @@ def _search_index(
             "source":           r.get("source"),
             "file_type":        r.get("file_type"),
             "chunk_type":       r.get("chunk_type"),
+            "chunk_level":      r.get("chunk_level", "single"),  # NEW
+            "parent_id":        r.get("parent_id"),              # NEW
             "chunk_size":       r.get("chunk_size"),
-            "content_type":     r.get("content_type", "text"),  # NEW
-            "section":          r.get("section", ""),           # NEW
+            "content_type":     r.get("content_type", "text"),
+            "section":          r.get("section", ""),
         }
 
         if "page" in r:
@@ -155,7 +160,6 @@ def _search_index(
 
 # =========================================================
 # DOC SEARCH
-# Searches the docs-index for relevant text and table chunks.
 # =========================================================
 
 def search_docs(query: str) -> List[Dict[str, Any]]:
@@ -174,20 +178,21 @@ def search_docs(query: str) -> List[Dict[str, Any]]:
         retrieval_source="docs-index",
         select_fields=[
             "id", "content", "doc_id", "source",
-            "file_type", "chunk_type", "page", "chunk_size",
-            "content_type", "section"   # NEW fields
+            "file_type", "chunk_type", "chunk_level",  # NEW
+            "parent_id", "page", "chunk_size",          # NEW
+            "content_type", "section"
         ]
     )
 
     trace("DOC RESULTS", [
         {
-            "id":           x["id"],
-            "score":        x["score"],
-            "source":       x.get("source"),
-            "page":         x.get("page"),
-            "content_type": x.get("content_type"),  # NEW
-            "section":      x.get("section"),        # NEW
-            "query_used":   x.get("retrieval_query")
+            "id":          x["id"],
+            "score":       x["score"],
+            "chunk_level": x.get("chunk_level"),
+            "parent_id":   x.get("parent_id"),
+            "source":      x.get("source"),
+            "page":        x.get("page"),
+            "section":     x.get("section"),
         }
         for x in results
     ])
@@ -197,9 +202,6 @@ def search_docs(query: str) -> List[Dict[str, Any]]:
 
 # =========================================================
 # DEDUPLICATION
-# When we run 5 different query variants, the same chunk
-# might come back multiple times. We keep only the best
-# scoring version of each unique chunk id.
 # =========================================================
 
 def deduplicate_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -214,7 +216,7 @@ def deduplicate_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     trace("DEDUPLICATED RESULTS", {
         "before": len(results),
-        "after": len(deduped)
+        "after":  len(deduped)
     })
 
     return deduped
@@ -222,54 +224,69 @@ def deduplicate_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 # =========================================================
 # MAIN RETRIEVAL
-# Full pipeline: query optimization → search → dedup → rerank
 # =========================================================
 
 def retrieve(query: str, final_top_k: int = FINAL_TOP_K) -> List[Dict[str, Any]]:
     trace("HYBRID RETRIEVAL START", {
-        "query": query,
-        "strategy": "query optimization + hybrid retrieval + reranking",
-        "doc_top_k_per_query": DOC_TOP_K_PER_QUERY,
+        "query":    query,
+        "strategy": "query optimization + hybrid retrieval + parent-child + reranking",
+        "doc_top_k_per_query":      DOC_TOP_K_PER_QUERY,
         "final_top_k_after_rerank": final_top_k
     })
 
     # Step 1: Generate multiple query variants
     retrieval_queries = build_retrieval_queries(query)
 
-    # Step 2: Search for each query variant
+    # Step 2: Search child chunks for each query variant
     all_doc_results = []
     for rq in retrieval_queries:
         all_doc_results.extend(search_docs(rq))
 
-    trace("RETRIEVAL BEFORE DEDUP", {
-        "doc_results_total": len(all_doc_results)
-    })
-
     # Step 3: Deduplicate
     candidates = deduplicate_results(all_doc_results)
 
-    trace("CANDIDATES PRE-RERANK", [
-        {
-            "id":           r["id"],
-            "score":        r["score"],
-            "content_type": r.get("content_type"),
-            "section":      r.get("section"),
-            "source":       r.get("source")
-        }
-        for r in candidates[:25]
-    ])
-
-    # Step 4: Rerank using GPT-4o
+    # Step 4: Rerank
     final_results = rerank_results(
         query=query,
         candidates=candidates,
         top_k=final_top_k
     )
 
+    # =========================================================
+    # Step 5: PARENT FETCH
+    # For every child chunk retrieved → fetch its parent
+    # Replace child content with parent content for LLM
+    # This gives LLM full context instead of tiny fragments
+    # =========================================================
+    doc_search_client = get_search_client(DOC_INDEX_NAME)
+    seen_parents = set()
+
+    for result in final_results:
+        chunk_level = result.get("chunk_level", "single")
+        parent_id   = result.get("parent_id")
+
+        if chunk_level == "child" and parent_id:
+            if parent_id not in seen_parents:
+                parent_text = fetch_parent_text(parent_id, doc_search_client)
+                if parent_text:
+                    result["child_content"] = result["content"]  # keep child for reference
+                    result["content"]       = parent_text         # replace with parent
+                    seen_parents.add(parent_id)
+                    print(f"[PARENT FETCH] ✅ {parent_id[:60]}...")
+                else:
+                    print(f"[PARENT FETCH] ⚠️  Parent not found: {parent_id[:60]}...")
+            else:
+                # Already fetched this parent — deduplicate
+                result["content"] = ""
+
+    # Remove results where parent was already used
+    final_results = [r for r in final_results if r.get("content")]
+
     trace("HYBRID RETRIEVAL COMPLETE", {
         "final_results_count": len(final_results),
-        "reranking_used": True,
-        "query_optimization_used": True
+        "reranking_used":           True,
+        "parent_child_used":        True,
+        "query_optimization_used":  True
     })
 
     return final_results
@@ -277,9 +294,6 @@ def retrieve(query: str, final_top_k: int = FINAL_TOP_K) -> List[Dict[str, Any]]
 
 # =========================================================
 # CONTEXT BUILDER
-# Formats retrieved chunks into a readable context string
-# that gets passed to the LLM.
-# NEW: includes content_type and section in metadata line.
 # =========================================================
 
 def build_context(results: List[Dict[str, Any]]) -> str:
@@ -295,11 +309,11 @@ def build_context(results: List[Dict[str, Any]]) -> str:
         if r.get("page") is not None:
             meta.append(f"page={r['page']}")
         if r.get("content_type"):
-            meta.append(f"content_type={r['content_type']}")   # NEW
+            meta.append(f"content_type={r['content_type']}")
         if r.get("section"):
-            meta.append(f"section={r['section']}")             # NEW
-        if r.get("chunk_type"):
-            meta.append(f"type={r['chunk_type']}")
+            meta.append(f"section={r['section']}")
+        if r.get("chunk_level"):
+            meta.append(f"level={r['chunk_level']}")
         if r.get("rerank_score") is not None:
             meta.append(f"rerank_score={r['rerank_score']}")
 
@@ -315,7 +329,7 @@ def build_context(results: List[Dict[str, Any]]) -> str:
 
     trace("FINAL CONTEXT BUILT", {
         "context_length_chars": len(context),
-        "context_preview": context[:2000]
+        "context_preview":      context[:2000]
     })
 
     return context
@@ -326,9 +340,9 @@ def build_context(results: List[Dict[str, Any]]) -> str:
 # =========================================================
 
 if __name__ == "__main__":
-    test_query = "What caused the engine fire and what should the pilot do during takeoff?"
-    results = retrieve(test_query)
-    context = build_context(results)
+    test_query = "What caused the accident?"
+    results    = retrieve(test_query)
+    context    = build_context(results)
     print("\n" + "=" * 100)
     print("FINAL RETRIEVED CONTEXT")
     print("=" * 100)

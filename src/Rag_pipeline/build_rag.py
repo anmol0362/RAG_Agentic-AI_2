@@ -82,11 +82,30 @@ def run_rag(query: str) -> Dict[str, Any]:
     }
 
 if __name__ == "__main__":
-    query = input("Enter your aviation question: ").strip()
-
-    output = run_rag(query)
-
     print("\n" + "=" * 110)
-    print("FINAL ANSWER")
+    print("AVIATION RAG CHATBOT")
+    print("Type 'exit' to stop")
     print("=" * 110)
-    print(output["answer"])
+
+    while True:
+        try:
+            query = input("\n🔍 Your question: ").strip()
+
+            if not query:
+                continue
+
+            if query.lower() in ["exit", "quit", "q"]:
+                print("\n[INFO] Goodbye!")
+                break
+
+            output = run_rag(query)
+
+            print("\n" + "=" * 110)
+            print("FINAL ANSWER")
+            print("=" * 110)
+            print(output["answer"])
+            print("=" * 110)
+
+        except KeyboardInterrupt:
+            print("\n[INFO] Goodbye!")
+            break
